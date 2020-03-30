@@ -11,11 +11,30 @@ library(shiny)
 library(shinythemes)
 
 plot.type <- list(
-    "Daily Deaths",
-    "Daily Cases",
-    "Cumulative Deaths",
-    "Cumulative Cases"
-);
+    "Daily deaths",
+    "Daily cases",
+    "Cumulative deaths",
+    "Cumulative cases"
+)
+
+countries <- list("UK only",
+                  "UK+US",
+                  "UK+Italy",
+                  "UK+Spain",
+                  "UK+France",
+                  "UK+Sweden",
+                  "UK+Switzerland",
+                  "UK+Australia",
+                  "UK+Canada",
+                  "UK+Mexico",
+                  "UK+Korea",
+                  "UK+China",
+                  "UK+Hong Kong",
+                  "UK+Japan",
+                  "UK+Iran",
+                  "UK+India")
+
+scales <- list("on natural scale", "on logarithmic scale")
 
 print(length(plot.type))
 
@@ -28,38 +47,55 @@ ui <- fluidPage(
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         # Application title
-
+        tags$div(style = "margin-top:40px",
         sidebarPanel(
             
-            selectInput("variable", "Select:",
-                         #choiceNames = plot.type,
+            selectInput("variable", "Show:",
                          choices = plot.type,
                          width = 200
                         ),
-            
+            selectInput("scale", "Scale:",
+                        choices = scales,
+                        width = 200
+            ),
+            selectInput("countries", "Countries:",
+                        choices = countries,
+                        width = 200
+            ),
+            sliderInput("alignment",
+                        "Align countries:",
+                        min = 0,
+                        max = 100,
+                        value = 10),
+        
             sliderInput("bins",
                         "Number of bins:",
-                        min = 1,
+                        min = 0,
                         max = 50,
                         value = 30)
+            )
         ),
 
         # Show a plot of the generated distribution
-        mainPanel(
-                  plotOutput("distPlot"))
+        mainPanel(tags$div(style = "margin-top:-49px;margin-right:15px",
+                           h3(fluidRow(
+                                   column(width = 3, textOutput("variable")), 
+                                   column(width = 4, textOutput("scale")),
+                              plotOutput("distPlot"))
+                              )
+                           )
+                  )
     )
 )
 
+
+
 # Define server logic required to draw a histogram
 server <- function(input, output) {
-    type <- list(
-        "Daily Deaths",
-        "Daily Cases",
-        "Cumulative Deaths",
-        "Cumulative Cases"
-    );
+
+    output$variable <- renderText({input$variable})
     
-    output$txt <- renderText({input$variable})
+    output$scale <- renderText({input$scale})
     
     output$distPlot <- renderPlot({
         # generate bins based on input$bins from ui.R
