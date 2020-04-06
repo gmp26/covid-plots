@@ -1,0 +1,198 @@
+---
+title: "Models for COVID Deaths"
+author: "Harry Giles"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setuip, include=F}
+library(docstring)
+library(ciTools)
+
+# Load dataset from the ECDC website into memory
+ecdc.df <-
+  read.csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv")
+ecdc.df$dateRep <- as.Date(ecdc.df$dateRep, format = "%d/%m/%Y")
+ecdc.df$t <- as.integer(ecdc.df$dateRep) - as.integer(as.Date("2020-01-01"))
+```
+
+```{r, include=F}
+# Helper functions
+country_df <- function(country,
+                       death_thresh = 10,
+                       n = 25,
+                       test_set = F) {
+  #' Returns a dataframe of the country specified starting from the first day
+  #' that the [death_thresh] is passed, includes first [n] days if [test] is F
+  #' else includes data beyond that point
+  df <- ecdc.df[ecdc.df$countriesAndTerritories == country,]
+  df <- data.frame(df)
+  date_0 <- min(df$dateRep[df$deaths > death_thresh])
+  df <- df[df$dateRep >= date_0,]
+  df <- df[order(df$dateRep), ]
+  if (is.null(n)) {
+    n <- nrow(df)
+  } else if (n > nrow(df)) {
+    stop("Not enough data, choose a lower [n]")
+  }
+  rownames(df) <- NULL
+  if (test_set) {
+    return(df[-(1:n), ])
+  } else {
+    return(df[1:n, ])
+  }
+}
+
+new_data <- function(date_start, date_stop) {
+  df <- data.frame(dateRep = seq(
+    from = as.Date(date_start),
+    to = as.Date(date_stop),
+    by =   "day"
+  ))
+  df$t <- as.integer(df$dateRep) - as.integer(as.Date("2020-01-01"))
+  return(df)
+}
+  
+
+```
+
+# Background
+
+Here is some justification for modelling log(deaths) as quadratic in time $t$. [Needs more work.]
+
+Let $I(t)$ be the number of infected people at time $t$ in a population of fixed size $P$. Suppose when you get infected you stay infectious, and each person transmits the disease to the same number of (potentially already infected) people each day. Then $I(t)$ is goverened by the following equation:
+\[I'(t) \propto I(t)(P-I(t))\]
+The solution is some rescaling of the the logistic funcion, $\tfrac{1}{1+e^{-t}}$.
+
+Well, the error function looks a lot like the logistic function, and if we model $I(t)$ as a rescaling of the error function, then the daily infection rate $I'(t)$ satisfies
+\[\log(I'(t)) \propto -k(t-t_0)^2\]
+This looks a lot like Poisson regression with quadratic terms.
+
+Finally, It seems reasonable to model the number of deaths as proportional to $I(t - t_\text{lag})$.
+
+# Italy
+```{r, include = F}
+death_thresh = 10
+italy.df <- country_df("Italy", death_thresh = death_thresh, n = 25)
+```
+
+To begin we will use the first `r nrow(italy.df)` days of data starting from when the country first had \geq `r death_thresh` deaths.
+
+## Model selection (Poisson)
+We fit a poisson model, and see that quadratic features are justified. 
+```{r}
+model.1 <-
+  glm(deaths ~ t + I(t^2),
+      family = poisson,
+      data = italy.df)
+anova(model.1, test = "Chisq")
+summary(model.1)
+```
+
+## Plots and dispersion
+```{r, include = F}
+# Estimate the dispersion parameter (which a poisson model assumes is 1)
+n <- nrow(italy.df)
+p <- length(model.1$coefficients)
+phi_hat <-
+  (n - p) ^ -1 * sum((italy.df$deaths - model.1$fitted.values) ^ 2 / model.1$fitted.values)
+```
+
+We plot the fitted values on a linear and log scale. In the log plot we include a prediction interval, being two stdevs of parameter error, plus two stdevs of poisson variation.
+
+The plots suggest overdispersion (a Poisson glm has a dispersion of 1). The dispersion estimate $\hat{\phi}$ for this model is `r phi_hat`, which under the model is asymptotically distributed as $\frac{1}{(n-p)}\chi^2_{n-p}$. We have extreme over-dispersion, which means that we should not take seriously confidence intervals for the parameters or expected response. Let's fix that in the next section.
+
+```{r, echo = F}
+newdata <- new_data("2020-03-01", "2020-04-02")
+newdata$deaths <- predict(model.1, newdata = newdata, type="response")
+newdata$se.fit <- predict(model.1, newdata = newdata, type="response", se.fit=T)$se.fit
+```
+
+```{r}
+plot(
+  newdata$dateRep,
+  newdata$deaths,
+  main = "Italy quadratic poisson",
+  xlab = "date",
+  ylab = "deaths",
+  type = "l",
+  ylim = c(10, 1000)
+)
+points(italy.df$dateRep, italy.df$deaths)
+```
+
+```{r, echo = F}
+plot(
+  newdata$dateRep,
+  newdata$deaths,
+  main = "Italy quadratic poisson (log)",
+  xlab = "date",
+  ylab = "deaths",
+  type = "l",
+  log = "y",
+  ylim = c(10, 1000)
+)
+polygon(
+  c(newdata$dateRep, rev(newdata$dateRep)),
+  c(
+    newdata$deaths - 2 * (sqrt(newdata$deaths) + newdata$se.fit),
+    rev(newdata$deaths + 2 * (sqrt(newdata$deaths) + newdata$se.fit))
+  ),
+  col = "grey90",
+  border = NA
+)
+lines( newdata$dateRep, newdata$deaths)
+points(italy.df$dateRep, italy.df$deaths)
+```
+
+## Quasi-poisson model
+We fit a quasi-poisson model which explains the data much better (see for example the improvement in residual deviance from the summary output). We plot the prediction intervals, and add points from the test data in black; data which was **not** used in fitting the model. The model slightly underestimates the out of sample data from the last few days.
+
+```{r}
+model.2 <-
+  glm(deaths ~ t + I(t^2),
+      family = quasipoisson,
+      data = italy.df)
+summary(model.2)
+```
+
+```{r, echo = F}
+newdata <- new_data("2020-03-01", "2020-04-02")
+newdata$deaths <- predict(model.2, newdata = newdata, type="response")
+# newdata$se.fit <- predict(model.2, newdata = newdata, type="response", se.fit=T)$se.fit
+newdata <- add_pi(newdata, model.2)
+```
+
+```{r, echo = F}
+plot(
+  newdata$dateRep,
+  newdata$deaths,
+  main = "Italy quasipoisson (log)",
+  xlab = "date",
+  ylab = "deaths",
+  type = "l",
+  log = "y",
+  ylim = c(10, 1000)
+)
+polygon(
+  c(newdata$dateRep, rev(newdata$dateRep)),
+  c(
+    newdata$LPB0.025,
+    rev(newdata$UPB0.975)
+  ),
+  col = "grey90",
+  border = NA
+)
+lines( newdata$dateRep, newdata$deaths)
+points(italy.df$dateRep, italy.df$deaths)
+
+italy.test.df <- country_df("Italy", death_thresh = death_thresh, test_set = T)
+points(italy.test.df$dateRep, italy.test.df$deaths, pch = 16)
+```
+
+# TODO
+- Look at other countries, potentailly try to squeeze the models together
+- Try to address the non-stationarity of the distribution, e.g. we could add a predictor for which control measures were in place on a given day
+- A simpler suggestion: we could put more weight on more recent datapoints
