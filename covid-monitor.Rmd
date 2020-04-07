@@ -22,7 +22,7 @@ install.packages("RColorBrewer")
 ```{r}
 library(RColorBrewer)
 display.brewer.all()
-cols <- brewer.pal(5, "Set1")
+cols <- brewer.pal(5, "Set2")
 
 covid.deaths <- read.csv("UK-italy-covid-deaths.csv") # read data into dataframe 
 
@@ -37,9 +37,9 @@ ylims=c(1,1000)
 plot(date.R,UK.daily,ylim=ylims,type="p", log="y",xlab="Date", ylab = "Daily number of deaths", pch=19,cex=0.9,bty="n",axes=F, col=cols[4])
 axis.Date(1,at=date.R,cex=0.7)
 axis(2,cex=0.7,las=2)
-points(date.R,It.daily, pch=19, col=cols[2]) 
-text(date.R[6],20,"Italy")
-text(date.R[20],20,"UK")
+points(date.R,It.daily, pch=19, col=cols[1]) 
+text(date.R[6],20,"Italy",col=cols[1])
+text(date.R[20],20,"UK",col=cols[4])
  
 
 # length of window for fitting
@@ -186,7 +186,7 @@ axis.Date(1,at=date.R,cex=0.7)
 axis(2,cex=0.7,las=2)
 points(date.R,It.daily, pch=1) 
 text(date.R[6],20,"Italy")
-text(date.R[20],20,"UK")
+text(date.R[20],20,"UK")r,
    title("Fitted loess line with 95% interval for underlying trajectory")
 
 lines(date.R,exp(pred.It.loess$fit ))
