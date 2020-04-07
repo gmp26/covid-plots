@@ -17,8 +17,13 @@ A Poisson regression with a $\log$ link function will therefore have a gradient 
 
 install.packages("ggplot2")
 install.packages("Hmisc")
+install.packages("RColorBrewer")
 
 ```{r}
+library(RColorBrewer)
+display.brewer.all()
+cols <- brewer.pal(5, "Set1")
+
 covid.deaths <- read.csv("UK-italy-covid-deaths.csv") # read data into dataframe 
 
 attach(covid.deaths)
@@ -27,13 +32,12 @@ date.R = as.Date(date,"%d/%m/%Y")
 n=length(UK.deaths)
 UK.daily=c(0,diff(UK.deaths))
 It.daily=c(0,diff(It.deaths))
-UK.daily
 days=1:n
-ylims=c(1,1500)
-plot(date.R,UK.daily,ylim=ylims,type="p", log="y",xlab="Date", ylab = "Daily number of deaths", pch=19,cex=0.9,bty="n",axes=F)
+ylims=c(1,1000)
+plot(date.R,UK.daily,ylim=ylims,type="p", log="y",xlab="Date", ylab = "Daily number of deaths", pch=19,cex=0.9,bty="n",axes=F, col=cols[4])
 axis.Date(1,at=date.R,cex=0.7)
 axis(2,cex=0.7,las=2)
-points(date.R,It.daily, pch=1) 
+points(date.R,It.daily, pch=19, col=cols[2]) 
 text(date.R[6],20,"Italy")
 text(date.R[20],20,"UK")
  
