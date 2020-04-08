@@ -1,13 +1,18 @@
 
 
+countries1 <- c("United.Kingdom", "Italy","France","Germany", "Spain", "United.States")
+countries2 <- c("Italy","France","Germany", "Spain", "United.Kingdom", "United.States")
+
 # David (Italy and UK deaths)
 covid.deaths <-
   read.csv("UK-italy-covid-deaths.csv") # read data into dataframe
 
 data <- read.csv("https://covid.ourworldindata.org/data/ecdc/total_deaths.csv")
+
+
 date <- data$date
-UK.deaths <- data[["United.Kingdom"]]
-It.deaths <- data[["Italy"]]
+UK.deaths <- data[[countries1[1]]] # data[[input$c1]]
+It.deaths <- data[[countries2[1]]] # data[[input$c2]]
 
 # Start from first non-zero row
 last.zero <- min(which.max(It.deaths > 0), which.max(UK.deaths > 0)) - 1
@@ -30,8 +35,6 @@ UK.daily = c(0, diff(UK.deaths))
 It.daily = c(0, diff(It.deaths))
 days = 1:n
 ylims = c(1, 2000)
-
-
 
 ###
 # Some of the following preamble may need to be placed within the relevant plot function.

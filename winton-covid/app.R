@@ -22,7 +22,9 @@ library(tibble)
 display.brewer.all()
 
 # Choose up to 5 countries and allocate from the ColorBrewer Set2 palette
-cols <- brewer.pal(5, "Set2")
+cols <- brewer.pal(5, "Set1")
+It.col <- cols[2]
+UK.col <- cols[1]
 
 ###
 #  UI related constants
@@ -41,7 +43,7 @@ source('david_preamble.R')
 ###
 # Plots
 ###
-plot0 <- function() {
+plot0 <- function(c1,c2) {
     plot(
         date.R,
         UK.daily,
@@ -54,16 +56,16 @@ plot0 <- function() {
         cex = 0.9,
         bty = "n",
         axes = F,
-        col = cols[4]
+        col = UK.col
     )
     axis.Date(1, at = date.R, cex = 0.7)
     axis(2, cex = 0.7, las = 2)
-    points(date.R, It.daily, pch = 19, col = cols[1])
-    text(date.R[6], 20, "Italy", col = cols[1],font=2)
-    text(date.R[20], 20, "UK", col = cols[4],font=2)
+    points(date.R, It.daily, pch = 19, col = It.col)
+    text(date.R[6], 20, c2, col = It.col,font=2)
+    text(date.R[20], 20, c1, col = UK.col,font=2)
 }
 
-plot1 <- function() {
+plot1 <- function(c1,c2) {
     plot(
         date.R,
         UK.daily,
@@ -76,13 +78,13 @@ plot1 <- function() {
         cex = 0.9,
         bty = "n",
         axes = F,
-        col = cols[4]
+        col = UK.col
     )
     axis.Date(1, at = date.R, cex = 0.7)
     axis(2, cex = 0.7, las = 2)
-    points(date.R, It.daily, pch = 19, col=cols[1])
-    text(date.R[6], 20, "Italy", col=cols[1], font=2)
-    text(date.R[20], 20, "UK", col=cols[4], font=2)
+    points(date.R, It.daily, pch = 19, col=It.col)
+    text(date.R[6], 20, c2, col=It.col, font=2)
+    text(date.R[20], 20, c1, col=UK.col, font=2)
     lines(date.R[current.window], exp(predictions.UK.current$fit))
     lines(date.R[It.window], exp(predictions.It.contemp$fit))
     title(
@@ -109,7 +111,7 @@ plot1 <- function() {
     )
 }
 
-plot2 <- function() {
+plot2 <- function(c1,c2) {
     plot(
         date.R,
         UK.daily,
@@ -121,13 +123,14 @@ plot2 <- function() {
         pch = 19,
         cex = 0.9,
         bty = "n",
-        axes = F
+        axes = F,
+        col = UK.col
     )
     axis.Date(1, at = date.R, cex = 0.7)
     axis(2, cex = 0.7, las = 2)
-    points(date.R, It.daily, pch = 1)
-    text(date.R[6], 20, "Italy")
-    text(date.R[20], 20, "UK")
+    points(date.R, It.daily, pch = 19, col=It.col)
+    text(date.R[6], 20, c2,col=It.col, font=2)
+    text(date.R[20], 20, c1, col=UK.col, font=2)
     lines(date.R[current.window], exp(predictions.UK.current$fit))
     lines(
         date.R[current.window],
@@ -188,7 +191,7 @@ plot2 <- function() {
     )
 }
 
-plot3 <- function() {
+plot3 <- function(c1,c2) {
     fit.It.current = glm(It.daily[current.window] ~ current.window, family =
                              "poisson")
     summary(fit.It.current)
@@ -217,19 +220,46 @@ plot3 <- function() {
         pch = 19,
         cex = 0.9,
         bty = "n",
-        axes = F
+        axes = F,
+        col = UK.col
     )
     axis.Date(1, at = date.R, cex = 0.7)
     axis(2, cex = 0.7, las = 2)
-    points(date.R, It.daily, pch = 1)
-    text(date.R[6], 20, "Italy")
-    text(date.R[20], 20, "UK")
+    points(date.R, It.daily, pch = 19, col=It.col)
+    text(date.R[6], 20, c2, col=It.col, font=2)
+    text(date.R[20], 20, c1, col=UK.col, font=2)
     title("Fitted loess line with 95% interval for underlying trajectory")
     
-
+    
+    It.daily.eps = It.daily + 0.0001 # add tiny bit to make log OK (weighting these obs by zero in analysis)
+    UK.daily.eps = UK.daily + 0.0001
+    x = 1:n
+    It.loess = loess(log(It.daily.eps) ~ x , weights = It.daily.eps, span =
+                         1)
+    pred.It.loess = predict(It.loess, se = T)
+    
+    lines(date.R, exp(pred.It.loess$fit))
+    lines(date.R,
+          exp(pred.It.loess$fit + 1.96 * pred.It.loess$se.fit),
+          lty = 2)
+    lines(date.R,
+          exp(pred.It.loess$fit - 1.96 * pred.It.loess$se.fit),
+          lty = 2)
+    
+    UK.loess = loess(log(UK.daily.eps) ~ x , weights = UK.daily.eps, span =
+                         1)
+    pred.UK.loess = predict(UK.loess, se = T)
+    lines(date.R, exp(pred.UK.loess$fit))
+    lines(date.R,
+          exp(pred.UK.loess$fit + 1.96 * pred.UK.loess$se.fit),
+          lty = 2)
+    lines(date.R,
+          exp(pred.UK.loess$fit - 1.96 * pred.UK.loess$se.fit),
+          lty = 2)
+    
 }
 
-plot4 <- function() {
+plot4 <- function(c1,c2) {
     
     It.daily.eps = It.daily + 0.0001 # add tiny bit to make log OK (weighting these obs by zero in analysis)
     UK.daily.eps = UK.daily + 0.0001
@@ -268,13 +298,14 @@ plot4 <- function() {
         pch = 19,
         cex = 0.9,
         bty = "n",
-        axes = F
+        axes = F,
+        col = UK.col
     )
     axis.Date(1, at = date.R, cex = 0.7)
     axis(2, cex = 0.7, las = 2)
-    points(date.R, It.daily, pch = 1)
-    text(date.R[6], 20, "Italy")
-    text(date.R[20], 20, "UK")
+    points(date.R, It.daily, pch = 19, col=It.col)
+    text(date.R[20], 500, c2, col=It.col, font=2)
+    text(date.R[35], 400, c1, col=UK.col, font=2)
     title("Fitted loess line with 95% interval for underlying trajectory")
     
     lines(date.R, exp(pred.It.loess$fit))
@@ -309,6 +340,14 @@ ui <- fluidPage(
             selectInput("variable",
                         "Select plot",
                         choices = plot.type,
+                        width = 160),
+            selectInput("c1",
+                        "Country 1",
+                        choices = countries1,
+                        width = 160),
+            selectInput("c2",
+                        "Country 2",
+                        choices = countries2,
                         width = 160),
             # fillRow(
             #     height = 100,
@@ -356,19 +395,19 @@ server <- function(input, output, session) {
     
     output$mainPlot <- renderPlot({
         if (input$variable == "Plot0") {
-            plot0()
+            plot0(input$c1, input$c2)
         }
         if (input$variable == "Plot1") {
-            plot1()
+            plot1(input$c1, input$c2)
         }
         else if (input$variable == "Plot2") {
-            plot2()
+            plot2(input$c1, input$c2)
         }
         else if (input$variable == "Plot3") {
-            plot3()
+            plot3(input$c1, input$c2)
         }
         else if (input$variable == "Plot4") {
-            plot4()
+            plot4(input$c1, input$c2)
         }
     })
 }
