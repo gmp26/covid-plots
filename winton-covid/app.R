@@ -35,145 +35,8 @@ plot.type <- list("Plot0",
 
 scales <- list("natural", "logarithmic")
 
-###
-# Deaths: Data tidying (Carys)
-###
-tidy.data <- function(url) {
-    # Strip out countries that are NA or less than 10 for the most recent report
-    data <- read.csv(url)
-    dates <- data[,1]
-    today <- dim(data)[1]
-    not_date <- data[,-1]
-    tnot_date <- t(not_date)
-    tnot_date <- subset(tnot_date, tnot_date[,today] > 10, na.rm = T)
-    ttnot_date <- t(tnot_date)
-    df <- as.data.frame(cbind(as.character(dates), ttnot_date))
-    colnames(df)[1] <- "date"
-    countries <- colnames(df[2:dim(df)[2]])
-    num.countries <- dim(df)[2] - 1
-    days <- dim(df)[1]
-    df$date <- as.Date(as.character(df$date), "%Y-%m-%d")
-    
-    for(i in 2:num.countries){
-        df[,i] <- as.numeric(as.character(df[,i], na.rm = T))
-    }
-    
-    # Get daily totals for each country
-    # ==================================
-    for(i in 2:(num.countries+1)){
-        offset <- 2*i - 2
-        daily <- 2*i - 1
-        df[,num.countries+offset] <- c(0, as.numeric(as.character(df[1:(days-1),i])))
-        colnames(df)[num.countries+offset] <- paste(colnames(df)[i],"offset", sep=".")
-        df[,num.countries+daily] <- as.numeric(as.character(df[,i])) - as.numeric(as.character(df[,num.countries+offset]))
-        colnames(df)[num.countries+daily] <- paste(colnames(df)[i],"daily", sep=".")
-    }
-    
-    # remove the offset columns
-    # ==========================
-    matches <- grep("offset$", colnames(df), ignore.case = T)
-    df <- df[,-c(matches)]
-    wide <- dim(df)[2]
-    return(list(df = df, offset <- offset, daily <- daily, 
-                countries = countries, num.countries = num.countries, days = days))
-}
+source('david_preamble.R')
 
-###
-# Data acquisition
-###
-
-# David (Italy and UK deaths)
-covid.deaths <- read.csv("UK-italy-covid-deaths.csv") # read data into dataframe
-
-# Carys (world deaths, annotated)
-world.deaths <- tidy.data("https://covid.ourworldindata.org/data/ecdc/total_deaths.csv")
-
-attach(covid.deaths)
-
-date.R = as.Date(date, "%d/%m/%Y")
-# calculate oberved counts each day
-n = length(UK.deaths)
-UK.daily = c(0, diff(UK.deaths))
-It.daily = c(0, diff(It.deaths))
-days = 1:n
-ylims = c(1, 2000)
-
-
-
-###
-# Some of the following preamble may need to be placed within the relevant plot function. 
-# I don't think all of it is relevant to all plots
-###
-
-
-# length of window for fitting
-
-window = 10
-current.window = (n - window + 1):n  # current UK and It lims
-end.It.window = min(which(It.deaths > UK.deaths[n])) # when just exceeds current UK total
-It.window = (end.It.window - window + 1):end.It.window
-
-#################
-day.weights = rep(1, n)
-day.weights[33] = 0.33 # downweight obs on day 33 days ago as only 8 hours deaths
-fit.UK.current = glm(UK.daily[current.window] ~ current.window,
-                     family = "poisson",
-                     weights = day.weights[current.window])
-summary(fit.UK.current)
-
-coeffs.UK.current = coef(summary(fit.UK.current))
-overdisp.UK.current = fit.UK.current$deviance / fit.UK.current$df.residual
-se.UK.current = coeffs.UK.current[2, 2] * sqrt(overdisp.UK.current)
-
-relative.increase = exp(coeffs.UK.current[2, 1])
-upper.relative.increase = exp(coeffs.UK.current[2, 1] + 1.96 * se.UK.current)
-lower.relative.increase = exp(coeffs.UK.current[2, 1] - 1.96 * se.UK.current)
-percent.increase.UK.current = signif(100 * (relative.increase - 1), 2)
-upper.percent.increase.UK.current = signif(100 * (upper.relative.increase -
-                                                      1), 2)
-lower.percent.increase.UK.current = signif(100 * (lower.relative.increase -
-                                                      1), 2)
-#################
-
-
-#################
-
-fit.It.contemp = glm(It.daily[It.window] ~ It.window, family = "poisson")
-summary(fit.It.contemp)
-
-coeffs.It.contemp = coef(summary(fit.It.contemp))
-overdisp.It.contemp = fit.It.contemp$deviance / fit.It.contemp$df.residual
-se.It.contemp = coeffs.It.contemp[2, 2] * sqrt(overdisp.It.contemp)
-
-relative.increase = exp(coeffs.It.contemp[2, 1])
-upper.relative.increase = exp(coeffs.It.contemp[2, 1] + 1.96 * se.It.contemp)
-lower.relative.increase = exp(coeffs.It.contemp[2, 1] - 1.96 * se.It.contemp)
-percent.increase.It.contemp = signif(100 * (relative.increase - 1), 2)
-upper.percent.increase.It.contemp = signif(100 * (upper.relative.increase -
-                                                      1), 2)
-lower.percent.increase.It.contemp = signif(100 * (lower.relative.increase -
-                                                      1), 2)
-#################
-
-# compare gradients
-
-Z = (coeffs.UK.current[2, 1] - coeffs.It.contemp[2, 1]) / sqrt(se.UK.current ^
-                                                                   2 + se.It.contemp ^ 2)
-P1 = 2 * min(pnorm(Z), (1 - pnorm(Z)))
-
-predictions.UK.current = predict(
-    fit.UK.current,
-    type = "link",
-    se.fit = T,
-    dispersion = overdisp.UK.current
-)
-#predictions.It.current=predict( fit.It.current,  type="link",se.fit=T,dispersion=overdisp.It.current)
-predictions.It.contemp = predict(
-    fit.It.contemp,
-    type = "link",
-    se.fit = T,
-    dispersion = overdisp.It.contemp
-)
 
 ###
 # Plots
@@ -482,7 +345,7 @@ ui <- fluidPage(
 ###
 # Server
 ###
-server <- function(input, output) {
+server <- function(input, output, session) {
     # output$variable <- renderText({
     #     input$variable
     # })
