@@ -10,24 +10,24 @@ covid.deaths <-
 data <- read.csv("https://covid.ourworldindata.org/data/ecdc/total_deaths.csv")
 
 
-date <- data$date
-UK.deaths <- data[[countries1[1]]] # data[[input$c1]]
-It.deaths <- data[[countries2[1]]] # data[[input$c2]]
+# date <- data$date
+# UK.deaths <- data[[countries1[1]]] # data[[input$c1]]
+# It.deaths <- data[[countries2[1]]] # data[[input$c2]]
 
-# Start from first non-zero row
-last.zero <- min(which.max(It.deaths > 0), which.max(UK.deaths > 0)) - 1
-UK.deaths <- UK.deaths[-(1:last.zero)]
-It.deaths <- It.deaths[-(1:last.zero)]
-date <- date[-(1:last.zero)]
 
-#attach(covid.deaths)
+attach(covid.deaths)
 # date <- covid.deaths$date
 # UK.deaths <- covid.deaths$UK.deaths
 # It.deaths <- covid.deaths$It.deaths
 
+# Start from first non-zero row
+# last.zero <- min(which.max(It.deaths > 0), which.max(UK.deaths > 0)) - 1
+# UK.deaths <- UK.deaths[-(1:last.zero)]
+# It.deaths <- It.deaths[-(1:last.zero)]
+# date <- date[-(1:last.zero)]
 
-#date.R = as.Date(date, "%d/%m/%Y") #david
-date.R = as.Date(date) #carys
+date.R = as.Date(date, "%d/%m/%Y") #david
+#date.R = as.Date(date) #carys
 
 # calculate oberved counts each day
 n = length(UK.deaths)
