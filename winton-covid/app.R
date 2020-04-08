@@ -12,12 +12,9 @@ library(shinythemes)
 library(Hmisc)
 library(RColorBrewer)
 library(tidyr)
+library(tibble)
 
 ######### Preamble
-covid.deaths <-
-    read.csv("UK-italy-covid-deaths.csv") # read data into dataframe
-
-
 
 ###
 # Categorical Colour palettes
@@ -39,10 +36,60 @@ plot.type <- list("Plot0",
 scales <- list("natural", "logarithmic")
 
 ###
+# Deaths: Data tidying (Carys)
+###
+tidy.data <- function(url) {
+    # Strip out countries that are NA or less than 10 for the most recent report
+    data <- read.csv(url)
+    dates <- data[,1]
+    today <- dim(data)[1]
+    not_date <- data[,-1]
+    tnot_date <- t(not_date)
+    tnot_date <- subset(tnot_date, tnot_date[,today] > 10, na.rm = T)
+    ttnot_date <- t(tnot_date)
+    df <- as.data.frame(cbind(as.character(dates), ttnot_date))
+    colnames(df)[1] <- "date"
+    countries <- colnames(df[2:dim(df)[2]])
+    num.countries <- dim(df)[2] - 1
+    days <- dim(df)[1]
+    df$date <- as.Date(as.character(df$date), "%Y-%m-%d")
+    
+    for(i in 2:num.countries){
+        df[,i] <- as.numeric(as.character(df[,i], na.rm = T))
+    }
+    
+    # Get daily totals for each country
+    # ==================================
+    for(i in 2:(num.countries+1)){
+        offset <- 2*i - 2
+        daily <- 2*i - 1
+        df[,num.countries+offset] <- c(0, as.numeric(as.character(df[1:(days-1),i])))
+        colnames(df)[num.countries+offset] <- paste(colnames(df)[i],"offset", sep=".")
+        df[,num.countries+daily] <- as.numeric(as.character(df[,i])) - as.numeric(as.character(df[,num.countries+offset]))
+        colnames(df)[num.countries+daily] <- paste(colnames(df)[i],"daily", sep=".")
+    }
+    
+    # remove the offset columns
+    # ==========================
+    matches <- grep("offset$", colnames(df), ignore.case = T)
+    df <- df[,-c(matches)]
+    wide <- dim(df)[2]
+    return(list(df = df, offset <- offset, daily <- daily, 
+                countries = countries, num.countries = num.countries, days = days))
+}
+
+###
 # Data acquisition
 ###
 
+# David (Italy and UK deaths)
+covid.deaths <- read.csv("UK-italy-covid-deaths.csv") # read data into dataframe
+
+# Carys (world deaths, annotated)
+world.deaths <- tidy.data("https://covid.ourworldindata.org/data/ecdc/total_deaths.csv")
+
 attach(covid.deaths)
+
 date.R = as.Date(date, "%d/%m/%Y")
 # calculate oberved counts each day
 n = length(UK.deaths)
@@ -50,6 +97,13 @@ UK.daily = c(0, diff(UK.deaths))
 It.daily = c(0, diff(It.deaths))
 days = 1:n
 ylims = c(1, 2000)
+
+
+
+###
+# Some of the following preamble may need to be placed within the relevant plot function. 
+# I don't think all of it is relevant to all plots
+###
 
 
 # length of window for fitting
@@ -121,54 +175,9 @@ predictions.It.contemp = predict(
     dispersion = overdisp.It.contemp
 )
 
-
-
-# Define UI for application that draws a histogram
-ui <- fluidPage(
-    theme = shinytheme("flatly"),
-    
-    titlePanel("Winton Centre Covid-19 monitor"),
-    
-    # Sidebar with a slider input for number of bins
-    sidebarLayout(
-        # Application title
-        sidebarPanel(
-            selectInput("variable",
-                        "Select plot",
-                        choices = plot.type,
-                        width = 160),
-            # fillRow(
-            #     height = 100,
-            #     fillCol(
-            #         width = "90%",
-            #         sliderInput(
-            #             "alignment",
-            #             "Align countries:",
-            #             min = 0,
-            #             max = 100,
-            #             value = 10
-            #         )
-            #     ),
-            #     fillCol(
-            #         width = "90%",
-            #         sliderInput(
-            #             "bins",
-            #             "Number of bins:",
-            #             min = 0,
-            #             max = 50,
-            #             value = 30
-            #         )
-            #     )
-            # )
-        ),
-        
-        # Show a plot of the generated distribution
-        mainPanel(h3(fluidRow(
-            plotOutput("mainPlot")
-        )))
-        
-    )
-)
+###
+# Plots
+###
 plot0 <- function() {
     plot(
         date.R,
@@ -354,6 +363,10 @@ plot3 <- function() {
     text(date.R[20], 20, "UK")
     title("Fitted loess line with 95% interval for underlying trajectory")
     
+
+}
+
+plot4 <- function() {
     
     It.daily.eps = It.daily + 0.0001 # add tiny bit to make log OK (weighting these obs by zero in analysis)
     UK.daily.eps = UK.daily + 0.0001
@@ -380,9 +393,7 @@ plot3 <- function() {
     lines(date.R,
           exp(pred.UK.loess$fit - 1.96 * pred.UK.loess$se.fit),
           lty = 2)
-}
-
-plot4 <- function() {
+    
     # on natural scale
     plot(
         date.R,
@@ -420,7 +431,57 @@ plot4 <- function() {
           lty = 2)
 }
 
-# Define server logic required to draw a histogram
+###
+# UI
+###
+ui <- fluidPage(
+    theme = shinytheme("flatly"),
+    
+    titlePanel("Winton Centre Covid-19 monitor"),
+    
+    # Sidebar with a slider input for number of bins
+    sidebarLayout(
+        # Application title
+        sidebarPanel(
+            selectInput("variable",
+                        "Select plot",
+                        choices = plot.type,
+                        width = 160),
+            # fillRow(
+            #     height = 100,
+            #     fillCol(
+            #         width = "90%",
+            #         sliderInput(
+            #             "alignment",
+            #             "Align countries:",
+            #             min = 0,
+            #             max = 100,
+            #             value = 10
+            #         )
+            #     ),
+            #     fillCol(
+            #         width = "90%",
+            #         sliderInput(
+            #             "bins",
+            #             "Number of bins:",
+            #             min = 0,
+            #             max = 50,
+            #             value = 30
+            #         )
+            #     )
+            # )
+        ),
+        
+        # Show a plot in the main panel
+        mainPanel(fluidRow(plotOutput("mainPlot")))
+        
+    )
+)
+
+
+###
+# Server
+###
 server <- function(input, output) {
     # output$variable <- renderText({
     #     input$variable
