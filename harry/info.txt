@@ -1,0 +1,1 @@
+Trend-line fit with local polynomial regression (loess). Dashed lines indicate a 95% prediction interval for a quasipoisson model with dispersion estimated from the data. Data source: https://www.ecdc.europa.eu/en. Reports are delayed from actual date of death.
