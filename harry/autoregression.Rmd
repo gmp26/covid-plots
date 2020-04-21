@@ -1,0 +1,406 @@
+---
+title: "Autoregressive Models for COVID Deaths"
+subtitle: "Using only deaths data"
+author: "Harry Giles"
+date: "8th April 2020"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+# TLDR
+The following is a good and theoretically justified regression:
+
+* Response: deaths today
+* Predictor 1: deaths yesterday
+* Predictor 2: (deaths yesterday) $\times$ (cumulative deaths as of yesterday)
+
+And we can do even better by smoothing the non-cumulative numbers, e.g. take a moving average over the last three days.
+
+# Background
+
+Consider the following formulation (based on an SIR model):
+
+* $P$ : population
+* $S_t$ : susceptible people on $t$
+* $I_t$ : infectious people on $t$
+* $R_t$ : removed people as of $t$ (deaths + recoveries)
+* $D_t$ : deaths as of $t$
+
+Then the SIR model asserts that $S_t + I_t + R_t = P$. The quantaties given above are cumulative, but we also have the discrete deltas, e.g. $\Delta S_t = S_t - S_{t-1}$, which qualitatively are:
+
+* $\Delta S_t$ : (negative) people exiting susceptible status on $t$ (because they got infected)
+* $\Delta I_t$ : newly infectious people on $t$ (which is the newly infected minus the newly removed) 
+* $\Delta R_t$ : newly removed people on $t$ (deaths on $t$ + recoveries on $t$)
+* $\Delta D_t$ : deaths on $t$
+
+The crucial equation governing the dynamics of an SIR model is that of the newly infectious: 
+
+\[\mathbb{E}\left[\Delta I_t\right] \approx k  I_{t-1} \frac{S_{t-1}}{P} - \Delta R_t \]
+
+Where $k$ governs how contagious the disease is, and is related to the $R_0$.
+
+# Theory
+
+We have data for number of infections, and healthy recoveries, but the deaths data is by far the most reliable and robust (even though it too is inacurate and delayed). We would like to base our forcasts on the death numbers alone. 
+
+1. We have that for some infection fatality rate $c_1$ with $0 < c_1 < 1$, $\mathbb{E}\left[\Delta D_t\right] = c_1 \Delta R_t$. This also holds for the cumulative numbers: $E\left[D_t\right] = c_1 R_t$ (and there is less comparative variance here because these numbers are cumulative).
+2. We have that for some removal rate $c_2$ with $0 < c_2 < 1$, $\mathbb{E}\left[\Delta R_t\right] = c_2 I_{t-1}$.
+
+The main idea is to start with $\mathbb{E}\left[\Delta D_{t+1}\right] = c_1 c_2 \mathbb{E}\left[I_t\right]$ and do the following substitutions:
+
+1. $I_t = \Delta I_t + I_{t-1}$
+2. The SIR equation from the previous section
+3. $\Delta R_t \approx \frac{1}{c_1} \Delta D_t$ and $R_{t-1} \approx \frac{1}{c_1} D_{t-1}$
+4. $I_{t-1} \approx \frac{1}{c_1 c_2} \Delta D_t$
+
+This gives:
+
+\[\mathbb{E}\left[\Delta D_{t+1}\right] \approx (1 + k - c_2) \Delta D_t - \frac{k}{c_1c_2P}((1-c_2)\Delta D_t + c_2 D_t)\Delta D_t\]
+
+We assume $c_2 D_t \gg (1-c_2) \Delta D_t$, and drop the latter term, to get something of the form:
+
+\[\mathbb{E}\left[\Delta D_{t+1}\right] \approx \beta_1 \Delta D_t + \beta_2 D_t \Delta D_t  \]
+
+Thus justifying these as the features for a regression, where we solve over $\beta_1 > 0$ and $\beta_2 < 0$. 
+
+We also improve on this by instead of using $\Delta D_t$, using some smoothed form. In our case we use the moving average over the last three days.
+
+# Fits and plots
+
+This in-sample prediction intervals come from simulated trajectories, and they look good. However, at the moment, the out of sample prediction intervals are only estimates. I have included them but in a slightly lighter grey, to illustrate that they need improving. The correct method would be to sample trajectories. I expect (hope) that this will cause the prediction intervals to come in. I will do this.
+
+Another issue is that the matter of the contagiousness of the disease is not constant over time --- as the model assumes --- due to interventions put in place by the government for example. We sidestep this by looking only after the first 100 deaths, which in most cases by this point interventions were already in place, or being put into place. An alternative fix could be to refit new parameters based on times of intervention. 
+
+```{r setuip, include=F}
+library(docstring)
+library(ciTools)
+
+# Load dataset from the ECDC website into memory
+ecdc.df <-
+  read.csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv")
+ecdc.df$dateRep <- as.Date(ecdc.df$dateRep, format = "%d/%m/%Y")
+ecdc.df <- ecdc.df[ecdc.df$dateRep < as.Date("2020-04-14"),]
+ecdc.df$popData2018 <- ecdc.df$popData2018 / 10^6
+ecdc.df$t <- as.integer(ecdc.df$dateRep) - as.integer(as.Date("2020-01-01"))
+```
+
+```{r, echo=F}
+# Helper functions
+country_df <- function(country,
+                       death_thresh = 10,
+                       n = 25,
+                       test_set = F) {
+  #' Returns a dataframe for a specific country starting from the first day
+  #' that the [death_thresh] is passed, includes first [n] days if [test] is F
+  #' else includes data beyond the first [n] days
+  df <- ecdc.df[ecdc.df$countriesAndTerritories == country,]
+  df <- data.frame(df)
+  date_0 <- min(df$dateRep[df$deaths > death_thresh])
+  df <- df[df$dateRep >= date_0,]
+  
+  # Check that there is enough data
+  if (n > nrow(df)) {
+    stop("Not enough data, choose a lower [n]")
+  } else if (n < 10) {
+    stop("Choose [n] >= 10 please")
+  }
+  
+  df <- df[order(df$dateRep), ]
+  rownames(df) <- NULL
+  df$deaths.cum <- cumsum(df$deaths)
+  
+  # The m1 here should be read as "minus 1"
+  df$deaths.m1 <- NA
+  df$deaths.m2 <- NA
+  df$deaths.m3 <- NA
+  df$deaths.cum.m1 <- NA
+  df$deaths.cum.m2 <- NA
+  df$deaths.m1[-1] <- df$deaths[-n]
+  df$deaths.m2[-c(1, 2)] <- df$deaths[-c(n - 1, n)]
+  df$deaths.m3[-c(1, 2, 3)] <- df$deaths[-c(n - 2, n - 1, n)]
+  df$deaths.cum.m1[-1] <- df$deaths.cum[-n]
+  df$deaths.cum.m2[-c(1, 2)] <- df$deaths.cum[-c(n - 1, n)]
+  
+  # Return the head if train, and the tail if test
+  if (test_set) {
+    return(df[-(1:n), ])
+  } else {
+    return(df[1:n, ])
+  }
+}
+
+forecast_model <- function(model, df, n_days) {
+  #' Given a data frame [df] and quasipoisson model [model], 
+  #' this function returns a data frame with forecasted data
+  #' according to that model
+  min_date <- min(df$dateRep)
+  max_date <- max(df$dateRep)
+  new.df <- data.frame(df[-c(1,2,3),])
+  
+  # Add the in sample fitted values and prediciton intervals
+  stopifnot(nrow(model$fitted.values) == nrow(new.df))
+  new.df$fitted <- predict(model, newdata = new.df)
+  new.df <- add_pi(new.df, model)
+  
+  phi <- predict(model,newdata = new.df, se.fit = T)$residual.scale ^ 2
+  se <- predict(model, df[-(1:(nrow(df) - 1)), ], se.fit = T)$se.fit
+  
+  # Extend to out of sample
+  new.df <- merge(new.df,
+                  data.frame(dateRep =
+                               seq(min_date, max_date + n_days, by = 'day')),
+                  by = c("dateRep"),
+                  all = T)
+  
+  const.colnames <- c("countriesAndTerritories",
+                      "geoId",
+                      "countryterritoryCode",
+                      "popData2018")
+  
+  for (colname in const.colnames) {
+    new.df[, colname] <- df[1, colname]
+  }
+  
+  for (i in (nrow(df) - 3 + 1):nrow(new.df)) {
+    new.df$deaths.m1[i] <- new.df$deaths[i - 1]
+    new.df$deaths.m2[i] <- new.df$deaths[i - 2]
+    new.df$deaths.m3[i] <- new.df$deaths[i - 3]
+    new.df$deaths.cum.m1[i] <- new.df$deaths.cum[i - 1]
+    new.df$deaths.cum.m2[i] <- new.df$deaths.cum[i - 2]
+    new.df$fitted <- predict(model, newdata = new.df)
+    new.df$deaths[i] <- new.df$fitted[i]
+    new.df$deaths.cum[i] <-
+      new.df$deaths.cum.m1[i] + new.df$deaths[i]
+  }
+  
+  # Add prediction errors for the forecast points
+  # TODO: Replace this dodgy approximation with a simultaion
+  for (i in (nrow(df) + 1):nrow(new.df)) {
+    v <- se^2 + (i - nrow(df)) * phi * new.df$fitted[i]
+    new.df$UPB0.975[i] <- new.df$fitted[i] + 2*sqrt(v)
+    new.df$LPB0.025[i] <- max(new.df$fitted[i] - 2*sqrt(v), 10)
+  }
+    
+  new.df <- new.df[, colnames(new.df) != "deaths"]
+  return(new.df)
+}
+
+fit_model <- function(country, n, death_thresh) {
+  #' Fits the model for country [country], returns summary and draws plots
+  
+  # Retrieve the data
+  df <- country_df(country, n = n, death_thresh = death_thresh)
+  test.df <-
+    country_df(country,
+               n = n,
+               death_thresh = death_thresh,
+               test_set = T)
+  
+  # Fit the model
+  model <-
+    glm(
+      deaths ~ I(deaths.m1 + deaths.m2 + deaths.m3)
+      + I((deaths.m1 + deaths.m2 + deaths.m3) * deaths.cum.m1 / 10 ^ 6)
+      - 1,
+      family = quasipoisson(link = "identity"),
+      data = df[-c(1, 2, 3), ]
+    )
+  
+  # Print the summary
+  print(summary(model))
+  
+  # Add prediction intervals for in-sample, and forecast beyond
+  n_days = as.integer(max(test.df$dateRep) - max(df$dateRep)) + 4
+  new.df <- forecast_model(model, df, n_days = n_days)
+  
+  # Plot the model fitted values and prediction intervals
+  ixs_grey <- (!is.na(new.df$LPB0.025)) & (new.df$dateRep <= max(df$dateRep))
+  ixs_red <- (!is.na(new.df$LPB0.025)) & (new.df$dateRep > max(df$dateRep))
+  
+  xs_grey <- c(new.df$dateRep[ixs_grey], rev(new.df$dateRep[ixs_grey]))
+  ys_grey <- c(new.df$LPB0.025[ixs_grey], rev(new.df$UPB0.975[ixs_grey]))
+  
+  xs_red <- c(new.df$dateRep[ixs_red], rev(new.df$dateRep[ixs_red]))
+  ys_red <- c(new.df$LPB0.025[ixs_red], rev(new.df$UPB0.975[ixs_red]))
+  
+  plot(
+    new.df$dateRep,
+    new.df$fitted,
+    log = 'y',
+    type = 'l',
+    ylim = c(20, 2000),
+    main = country,
+    xlab = 'date',
+    ylab = 'deaths'
+  )
+  polygon(xs_grey, ys_grey, col = "grey90", border = NA)
+  polygon(xs_red, ys_red, col = "grey95", border = NA)
+  lines(new.df$dateRep, new.df$fitted)
+  points(df$dateRep, df$deaths)
+  points(test.df$dateRep, test.df$deaths, pch = 16)
+}
+```
+
+## Italy
+```{r}
+fit_model(country = "Italy", n = 30, death_thresh = 100)
+```
+
+
+## Spain
+```{r}
+fit_model(country = "Spain", n = 25, death_thresh = 100)
+```
+
+
+## United States
+This is an interesting case, because we have much less data, in particular the datapoints are earlier on in the epedimic, making it harder for the model to pick up on the second coefficient. In fact the null hypothesis that this parameter is zero fails to be rejected.
+
+One way to address this is to fit a model with data from the US and another country, ideally one which we expect to have similar contagiousness rates, e.g. a country with similar social distancing measures. We do exactly this in the next section.
+
+```{r}
+fit_model(country = "United_States_of_America", n = 20, death_thresh = 100)
+```
+
+## France
+France is an even more difficult case because of the huge jump in deaths on April 4th, from 471 to 2004. It is no surprise that this is outside of the prediction interval. What was the reason for this, was it e.g. a reporting issue, or was there really an anomolous spike on this day? As with the US, the second parameter is not significant.
+
+```{r}
+fit_model(country = "France", n = 15, death_thresh = 100)
+```
+
+## United Kingdom
+For some reason that I don't understand yet, the code does not seem to work for the UK. This is a bit worrying.
+
+However, with data to 11/4/2020 we can now get a fit usinng n = 13. -- Mike P.
+
+```{r}
+fit_model(country = "United_Kingdom", n = 13, death_thresh = 100)
+```
+
+
+# Joint models
+Here we do as described in the above section, merging the US data with Spain to fit the model. We must be sure to change the second predictor to add a factor of $\frac{1}{P}$.
+
+Interestingly, in each case it forecasts that America is still on the way up, instead of before where we looked to be nearer the peak.
+
+```{r, echo = F}
+fit_joint_model <- function(countries, ns, death_thresh) {
+  #' Fits a joint model for countries in [countries], returns 
+  #' summary and draws plots
+  
+  names(ns) <- countries
+  dfs <- list()
+  test.dfs <- list()
+  
+  for (country in countries) {
+    df <-
+      country_df(country, n = ns[country], death_thresh = death_thresh)
+    test.df <-
+      country_df(country,
+                 n = ns[country],
+                 death_thresh = death_thresh,
+                 test_set = T)
+    
+    dfs <- c(dfs, list(df))
+    test.dfs <- c(test.dfs, list(test.df))
+  }
+
+  names(dfs) <- countries
+  names(test.dfs) <- countries
+  
+  joint.df <- do.call(rbind, dfs)
+  # joint.test.df <- do.call(rbind, test.dfs)
+  
+  model <-
+    glm(
+      deaths ~ I(deaths.m1 + deaths.m2 + deaths.m3)
+      + I((deaths.m1 + deaths.m2 + deaths.m3) * deaths.cum.m1 / popData2018)
+      - 1,
+      family = quasipoisson(link = "identity"),
+      data = joint.df
+    )
+  
+  # Model summary
+  print(summary(model))
+
+  for(country in countries) {
+    df <- dfs[[country]]
+    test.df <- test.dfs[[country]]
+    
+    # Add prediction intervals for in-sample, and forecast beyond
+    n_days = as.integer(max(test.df$dateRep) - max(df$dateRep)) + 4
+    new.df <- forecast_model(model, df, n_days = n_days)
+    
+    # Plot the model fitted values and prediction intervals
+    ixs_grey <-
+      (!is.na(new.df$LPB0.025)) & (new.df$dateRep <= max(df$dateRep))
+    ixs_red <-
+      (!is.na(new.df$LPB0.025)) & (new.df$dateRep > max(df$dateRep))
+    
+    xs_grey <-
+      c(new.df$dateRep[ixs_grey], rev(new.df$dateRep[ixs_grey]))
+    ys_grey <-
+      c(new.df$LPB0.025[ixs_grey], rev(new.df$UPB0.975[ixs_grey]))
+    
+    xs_red <- c(new.df$dateRep[ixs_red], rev(new.df$dateRep[ixs_red]))
+    ys_red <-
+      c(new.df$LPB0.025[ixs_red], rev(new.df$UPB0.975[ixs_red]))
+    
+    plot(
+      new.df$dateRep,
+      new.df$fitted,
+      log = 'y',
+      type = 'l',
+      ylim = c(20, 2000),
+      main = country,
+      xlab = 'date',
+      ylab = 'deaths'
+    )
+    polygon(xs_grey, ys_grey, col = "grey90", border = NA)
+    polygon(xs_red, ys_red, col = "grey95", border = NA)
+    lines(new.df$dateRep, new.df$fitted)
+    points(df$dateRep, df$deaths)
+    points(test.df$dateRep, test.df$deaths, pch = 16)
+  }
+}
+```
+## United Kingdom (with Spain)
+```{r}
+fit_joint_model(
+  countries =  c("United_Kingdom", "Spain"),
+  ns =  c(14, 20),
+  death_thresh = 100
+)
+```
+## United States (with Spain)
+```{r}
+fit_joint_model(
+  countries =  c("United_States_of_America", "Spain"),
+  ns =  c(14, 20),
+  death_thresh = 100
+)
+```
+## United Kingdom (with Italy)
+```{r}
+fit_joint_model(
+  countries =  c("United_Kingdom", "Italy"),
+  ns =  c(14, 25),
+  death_thresh = 100
+)
+```
+## United States (with Italy)
+```{r}
+fit_joint_model(
+  countries =  c("United_States_of_America", "Italy"),
+  ns =  c(20, 30),
+  death_thresh = 100
+)
+```
+
+
+# Comments / Questions / TODO
+- How much better is this than just regressing on only the moving average of the last three days? We can answer this by looking at the model summary output.
+- Tidy this markdown file, perhaps seperate the function out into a source file
