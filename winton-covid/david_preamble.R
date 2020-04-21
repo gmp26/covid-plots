@@ -4,47 +4,30 @@ countries1 <- c("United.Kingdom", "Italy","France","Germany", "Spain", "United.S
 countries2 <- c("Italy","France","Germany", "Spain", "United.Kingdom", "United.States")
 
 # David (Italy and UK deaths)
-# covid.deaths <-
-#   read.csv("UK-italy-covid-deaths.csv") # read data into dataframe
+covid.deaths <-
+  read.csv("UK-italy-covid-deaths.csv") # read data into dataframe
 
 data <- read.csv("https://covid.ourworldindata.org/data/ecdc/total_deaths.csv")
 
-dates <- data[, 1]
-today <- dim(data)[1]
-not_date <- data[, -1]
-tnot_date <- t(not_date)
-tnot_date <- subset(tnot_date, tnot_date[, today] > 10, na.rm = T)
-ttnot_date <- t(tnot_date)
-df <- as.data.frame(cbind(as.character(dates), ttnot_date))
-colnames(df)[1] <- "date"
-countries <- colnames(df[2:dim(df)[2]])
-num.countries <- dim(df)[2] - 1
-days <- dim(df)[1]
-df$date <- as.Date(as.character(df$date), "%Y-%m-%d")
 
-for (i in 2:num.countries) {
-  df[, i] <- as.numeric(as.character(df[, i], na.rm = T))
-}
+# date <- data$date
+# UK.deaths <- data[[countries1[1]]] # data[[input$c1]]
+# It.deaths <- data[[countries2[1]]] # data[[input$c2]]
 
 
-date <- df$date
-UK.deaths <- df[[countries1[1]]] # data[[input$c1]]
-It.deaths <- df[[countries2[1]]] # data[[input$c2]]
-
-# Start from first non-zero row
-last.zero <- min(which.max(It.deaths > 0), which.max(UK.deaths > 0)) - 1
-UK.deaths <- UK.deaths[-(1:last.zero)]
-It.deaths <- It.deaths[-(1:last.zero)]
-date <- date[-(1:last.zero)]
-
-#attach(covid.deaths)
+attach(covid.deaths)
 # date <- covid.deaths$date
 # UK.deaths <- covid.deaths$UK.deaths
 # It.deaths <- covid.deaths$It.deaths
 
+# Start from first non-zero row
+# last.zero <- min(which.max(It.deaths > 0), which.max(UK.deaths > 0)) - 1
+# UK.deaths <- UK.deaths[-(1:last.zero)]
+# It.deaths <- It.deaths[-(1:last.zero)]
+# date <- date[-(1:last.zero)]
 
-#date.R = as.Date(date, "%d/%m/%Y") #david
-date.R = as.Date(date) #carys
+date.R = as.Date(date, "%d/%m/%Y") #david
+#date.R = as.Date(date) #carys
 
 # calculate oberved counts each day
 n = length(UK.deaths)

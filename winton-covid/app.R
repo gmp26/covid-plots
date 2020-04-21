@@ -61,8 +61,8 @@ plot0 <- function(c1,c2) {
     axis.Date(1, at = date.R, cex = 0.7)
     axis(2, cex = 0.7, las = 2)
     points(date.R, It.daily, pch = 19, col = It.col)
-    text(date.R[6], 20, c2, col = It.col,font=2)
-    text(date.R[20], 20, c1, col = UK.col,font=2)
+    text(date.R[6], 20, c2, col = It.col, font=2)
+    text(date.R[20], 20, c1, col = UK.col, font=2)
 }
 
 plot1 <- function(c1,c2) {
